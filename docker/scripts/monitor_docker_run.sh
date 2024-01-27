@@ -24,6 +24,7 @@ echo "start docker"
 docker run -it -d \
 --name linux_monitor \
 -e DISPLAY=$display \
+--privileged=true \
 -e DOCKER_USER="${user}" \
 -e USER="${user}" \
 -e DOCKER_USER_ID="${uid}" \

@@ -51,14 +51,14 @@ RUN /tmp/install/abseil/install_abseil.sh
 COPY install/grpc /tmp/install/grpc
 RUN /tmp/install/grpc/install_grpc.sh
 
-COPY install/cmake /tmp/install/cmake
-RUN /tmp/install/cmake/install_cmake.sh
+# COPY install/cmake /tmp/install/cmake
+# RUN /tmp/install/cmake/install_cmake.sh
 
-RUN apt-get install -y python3-pip
-RUN pip3 install cuteci -i https://mirrors.aliyun.com/pypi/simple
+# RUN apt-get install -y python3-pip
+# RUN pip3 install cuteci -i https://mirrors.aliyun.com/pypi/simple
 
-COPY install/qt /tmp/install/qt
-RUN /tmp/install/qt/install_qt.sh
+# COPY install/qt /tmp/install/qt
+# RUN /tmp/install/qt/install_qt.sh
 
 
 
