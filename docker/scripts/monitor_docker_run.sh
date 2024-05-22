@@ -2,6 +2,7 @@
 
 MONITOR_HOME_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." && pwd )"
 
+# 显示设置
 display=""
 if [ -z ${DISPLAY} ];then
     display=":1"
@@ -9,6 +10,7 @@ else
     display="${DISPLAY}"
 fi
 
+# 设置容器内部的环境变量或者权限控制
 local_host="$(hostname)"
 user="${USER}"
 uid="$(id -u)"

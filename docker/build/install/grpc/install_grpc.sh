@@ -13,6 +13,7 @@ PKG_NAME="grpc-${VERSION}.tar.gz"
 
 tar xzf "${PKG_NAME}"
 
+# pre_requestment: protobuf and abseil(absl)
 pushd grpc-${VERSION}
     mkdir build && cd build
     cmake ..    -DgRPC_INSTALL=ON                \
