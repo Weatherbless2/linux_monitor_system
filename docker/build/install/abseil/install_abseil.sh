@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-# 过程中执行命令返回值为 0 直接终止执行
 set -e
 
 cd "$(dirname "${BASH_SOURCE[0]}")"

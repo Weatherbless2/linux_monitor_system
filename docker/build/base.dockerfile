@@ -1,8 +1,5 @@
-# 配置基础镜像 ubuntu的镜像比ubuntu图形界面系统要小很多，一般18.04为60M
 FROM  ubuntu:18.04
 
-# 是一个在构建 Docker 镜像时常用的配置，用于在构建过程中设置环境变量，使得 apt-get 
-#等命令在非交互模式下运行。这对于自动化构建非常有用，因为它可以避免因交互提示导致的构建中断。
 ARG DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 
@@ -44,7 +41,7 @@ RUN apt-get install -y python-dev \
     python-pip \
     python-all-dev 
 
-# 这里是将宿主机的protobuf下载脚本 copy到docker镜像中，并进行安装
+
 COPY install/protobuf /tmp/install/protobuf
 RUN /tmp/install/protobuf/install_protobuf.sh
 

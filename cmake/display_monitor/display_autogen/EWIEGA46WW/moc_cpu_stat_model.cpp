@@ -1,7 +1,7 @@
 /****************************************************************************
 ** Meta object code from reading C++ file 'cpu_stat_model.h'
 **
-** Created by: The Qt Meta Object Compiler version 67 (Qt 5.9.5)
+** Created by: The Qt Meta Object Compiler version 67 (Qt 5.12.9)
 **
 ** WARNING! All changes made in this file will be lost!
 *****************************************************************************/
@@ -13,7 +13,7 @@
 #if !defined(Q_MOC_OUTPUT_REVISION)
 #error "The header file 'cpu_stat_model.h' doesn't include <QObject>."
 #elif Q_MOC_OUTPUT_REVISION != 67
-#error "This file was generated using the moc from 5.9.5. It"
+#error "This file was generated using the moc from 5.12.9. It"
 #error "cannot be used with the include files from this version of Qt."
 #error "(The moc has changed too much.)"
 #endif
@@ -22,8 +22,8 @@ QT_BEGIN_MOC_NAMESPACE
 QT_WARNING_PUSH
 QT_WARNING_DISABLE_DEPRECATED
 struct qt_meta_stringdata_monitor__CpuStatModel_t {
-    QByteArrayData data[7];
-    char stringdata0[74];
+    QByteArrayData data[8];
+    char stringdata0[86];
 };
 #define QT_MOC_LITERAL(idx, ofs, len) \
     Q_STATIC_BYTE_ARRAY_DATA_HEADER_INITIALIZER_WITH_OFFSET(len, \
@@ -35,21 +35,23 @@ static const qt_meta_stringdata_monitor__CpuStatModel_t qt_meta_stringdata_monit
 QT_MOC_LITERAL(0, 0, 21), // "monitor::CpuStatModel"
 QT_MOC_LITERAL(1, 22, 11), // "dataChanged"
 QT_MOC_LITERAL(2, 34, 0), // ""
-QT_MOC_LITERAL(3, 35, 7), // "topLeft"
-QT_MOC_LITERAL(4, 43, 11), // "bottomRight"
-QT_MOC_LITERAL(5, 55, 12), // "QVector<int>"
-QT_MOC_LITERAL(6, 68, 5) // "roles"
+QT_MOC_LITERAL(3, 35, 11), // "QModelIndex"
+QT_MOC_LITERAL(4, 47, 7), // "topLeft"
+QT_MOC_LITERAL(5, 55, 11), // "bottomRight"
+QT_MOC_LITERAL(6, 67, 12), // "QVector<int>"
+QT_MOC_LITERAL(7, 80, 5) // "roles"
 
     },
     "monitor::CpuStatModel\0dataChanged\0\0"
-    "topLeft\0bottomRight\0QVector<int>\0roles"
+    "QModelIndex\0topLeft\0bottomRight\0"
+    "QVector<int>\0roles"
 };
 #undef QT_MOC_LITERAL
 
 static const uint qt_meta_data_monitor__CpuStatModel[] = {
 
  // content:
-       7,       // revision
+       8,       // revision
        0,       // classname
        0,    0, // classinfo
        1,   14, // methods
@@ -63,7 +65,7 @@ static const uint qt_meta_data_monitor__CpuStatModel[] = {
        1,    3,   19,    2, 0x06 /* Public */,
 
  // signals: parameters
-    QMetaType::Void, QMetaType::QModelIndex, QMetaType::QModelIndex, 0x80000000 | 5,    3,    4,    6,
+    QMetaType::Void, 0x80000000 | 3, 0x80000000 | 3, 0x80000000 | 6,    4,    5,    7,
 
        0        // eod
 };
@@ -71,7 +73,7 @@ static const uint qt_meta_data_monitor__CpuStatModel[] = {
 void monitor::CpuStatModel::qt_static_metacall(QObject *_o, QMetaObject::Call _c, int _id, void **_a)
 {
     if (_c == QMetaObject::InvokeMetaMethod) {
-        CpuStatModel *_t = static_cast<CpuStatModel *>(_o);
+        auto *_t = static_cast<CpuStatModel *>(_o);
         Q_UNUSED(_t)
         switch (_id) {
         case 0: _t->dataChanged((*reinterpret_cast< const QModelIndex(*)>(_a[1])),(*reinterpret_cast< const QModelIndex(*)>(_a[2])),(*reinterpret_cast< const QVector<int>(*)>(_a[3]))); break;
@@ -91,7 +93,7 @@ void monitor::CpuStatModel::qt_static_metacall(QObject *_o, QMetaObject::Call _c
     } else if (_c == QMetaObject::IndexOfMethod) {
         int *result = reinterpret_cast<int *>(_a[0]);
         {
-            typedef void (CpuStatModel::*_t)(const QModelIndex & , const QModelIndex & , const QVector<int> & );
+            using _t = void (CpuStatModel::*)(const QModelIndex & , const QModelIndex & , const QVector<int> & );
             if (*reinterpret_cast<_t *>(_a[1]) == static_cast<_t>(&CpuStatModel::dataChanged)) {
                 *result = 0;
                 return;
@@ -100,10 +102,14 @@ void monitor::CpuStatModel::qt_static_metacall(QObject *_o, QMetaObject::Call _c
     }
 }
 
-const QMetaObject monitor::CpuStatModel::staticMetaObject = {
-    { &MonitorInterModel::staticMetaObject, qt_meta_stringdata_monitor__CpuStatModel.data,
-      qt_meta_data_monitor__CpuStatModel,  qt_static_metacall, nullptr, nullptr}
-};
+QT_INIT_METAOBJECT const QMetaObject monitor::CpuStatModel::staticMetaObject = { {
+    &MonitorInterModel::staticMetaObject,
+    qt_meta_stringdata_monitor__CpuStatModel.data,
+    qt_meta_data_monitor__CpuStatModel,
+    qt_static_metacall,
+    nullptr,
+    nullptr
+} };
 
 
 const QMetaObject *monitor::CpuStatModel::metaObject() const
