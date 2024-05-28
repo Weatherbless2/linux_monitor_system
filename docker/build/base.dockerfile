@@ -9,6 +9,7 @@ RUN apt-get clean && \
     apt-get autoclean
 COPY apt/sources.list /etc/apt/
 
+#ubuntu 需要的软件包
 RUN apt-get update  && apt-get upgrade -y  && \
     apt-get install -y \
     htop \
