@@ -61,8 +61,8 @@ QWidget *MonitorWidget::InitCpuMonitorWidget() {
   cpu_load_monitor_view_->show();
 
   QLabel *cpu_stat_label = new QLabel(this);
-  cpu_load_label->setText(tr("Monitor CpuStat:"));
-  cpu_load_label->setFont(QFont("Microsoft YaHei", 10, 40));
+  cpu_stat_label->setText(tr("Monitor CpuStat:"));
+  cpu_stat_label->setFont(QFont("Microsoft YaHei", 10, 40));
 
   cpu_stat_monitor_view_ = new QTableView;
   cpu_stat_model_ = new CpuStatModel;
