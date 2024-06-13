@@ -25,7 +25,7 @@ int main() {
   monitor::RpcClient rpc_client_;
   char *name = getenv("USER");
   std::unique_ptr<std::thread> thread_ = nullptr;
-  thread_ = std::make_unique<std::thread>([&]() {
+  thread_ = std::make_unique<std::thread>([&]() { 
     while (true) {
       monitor::proto::MonitorInfo monitor_info;
       monitor_info.set_name(std::string(name));

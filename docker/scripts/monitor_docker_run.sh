@@ -7,7 +7,7 @@
 # 后续将 MONITOR_HOME_DIR即本地目录挂载到docker内的/work/目录
 
 MONITOR_HOME_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." && pwd )"
-
+                                                                                                                                           
 display=""
 if [ -z ${DISPLAY} ];then
     display=":1"

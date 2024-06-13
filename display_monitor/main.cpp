@@ -28,6 +28,7 @@ int main(int argc, char* argv[]) {
       std::this_thread::sleep_for(std::chrono::seconds(2));
     }
   });
+  //thread_->join();
   thread_->detach();
 
   return app.exec();
