@@ -1,8 +1,8 @@
 #include "rpc_client.h"
 
 namespace monitor {
-RpcClient::RpcClient() {
-  auto channel = grpc::CreateChannel("localhost:50051",
+RpcClient::RpcClient(const std::string& server_address) {
+  auto channel = grpc::CreateChannel(server_address,
                                      grpc::InsecureChannelCredentials());
   stub_ptr_ = monitor::proto::GrpcManager::NewStub(channel);
 }
