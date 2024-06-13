@@ -29,7 +29,7 @@ class CpuStatMonitor : public MonitorInter {
   void Stop() override {}
 
  private:
-  std::unordered_map<std::string, struct CpuStat> cpu_stat_map_; //存放之前的stat信息
+  std::unordered_map<std::string, struct CpuStat> cpu_stat_map_;
 };
 
 }  // namespace monitor

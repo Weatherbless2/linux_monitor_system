@@ -13,7 +13,7 @@ void CpuStatMonitor::UpdateOnce(monitor::proto::MonitorInfo* monitor_info) {
       // std::cout << cpu_stat_list[0] << cpu_stat_list[1] << std::endl;
       struct CpuStat cpu_stat;
       cpu_stat.cpu_name = cpu_stat_list[0];
-      cpu_stat.user = std::stof(  [1]);
+      cpu_stat.user = std::stof(cpu_stat_list[1]);
       cpu_stat.nice = std::stof(cpu_stat_list[2]);
       cpu_stat.system = std::stof(cpu_stat_list[3]);
       cpu_stat.idle = std::stof(cpu_stat_list[4]);
