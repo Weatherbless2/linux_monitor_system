@@ -7,8 +7,14 @@
 
 int main(int argc, char* argv[]) {
   QApplication app(argc, argv);
+
+  std::string server_address = "localhost:50051";
+  if (argc > 1) {
+    server_address = argv[1];
+  }
+
   monitor::MonitorWidget moitor_widget;
-  monitor::RpcClient rpc_client;
+  monitor::RpcClient rpc_client(server_address);
   monitor::proto::MonitorInfo monitor_info;
 
   //get board name
