@@ -2,8 +2,8 @@
 
 namespace monitor {
 RpcClient::RpcClient(const std::string& server_address) {
-  auto channel = grpc::CreateChannel(server_address,
-                                     grpc::InsecureChannelCredentials());
+  auto channel =
+      grpc::CreateChannel(server_address, grpc::InsecureChannelCredentials());
   stub_ptr_ = monitor::proto::GrpcManager::NewStub(channel);
 }
 RpcClient::~RpcClient() {}
@@ -16,6 +16,8 @@ void RpcClient::SetMonitorInfo(const monitor::proto::MonitorInfo& monito_info) {
   if (status.ok()) {
   } else {
     std::cout << status.error_details() << std::endl;
+    std::cout << "status.error_message: " << status.error_message()
+              << std::endl;
     std::cout << "falied to connect !!!" << std::endl;
   }
 }
@@ -28,6 +30,8 @@ void RpcClient::GetMonitorInfo(monitor::proto::MonitorInfo* monito_info) {
   if (status.ok()) {
   } else {
     std::cout << status.error_details() << std::endl;
+    std::cout << "status.error_message: " << status.error_message()
+              << std::endl;
     std::cout << "falied to connect !!!" << std::endl;
   }
 }
