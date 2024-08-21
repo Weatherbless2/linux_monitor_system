@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+#启动docker容器的bash脚本；
 MONITOR_HOME_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/../.." && pwd )"
 
 display=""
