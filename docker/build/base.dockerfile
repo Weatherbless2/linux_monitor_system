@@ -14,7 +14,6 @@ RUN apt-get update  && apt-get upgrade -y  && \
     htop \
     apt-utils \
     curl \
-    cmake \
     git \
     openssh-server \
     build-essential \
@@ -36,11 +35,9 @@ RUN apt-get install -y  \
     libxkbcommon0   \
     libxkbcommon-x11-0
 
-RUN apt-get install -y python-dev \
-    python3-dev \
-    python-pip \
-    python-all-dev 
 
+ COPY install/cmake /tmp/install/cmake
+ RUN /tmp/install/cmake/install_cmake.sh
 
 COPY install/protobuf /tmp/install/protobuf
 RUN /tmp/install/protobuf/install_protobuf.sh
@@ -51,14 +48,13 @@ RUN /tmp/install/abseil/install_abseil.sh
 COPY install/grpc /tmp/install/grpc
 RUN /tmp/install/grpc/install_grpc.sh
 
-# COPY install/cmake /tmp/install/cmake
-# RUN /tmp/install/cmake/install_cmake.sh
 
-# RUN apt-get install -y python3-pip
-# RUN pip3 install cuteci -i https://mirrors.aliyun.com/pypi/simple
 
-# COPY install/qt /tmp/install/qt
-# RUN /tmp/install/qt/install_qt.sh
+ RUN apt-get install -y python3-pip
+ RUN pip3 install cuteci -i https://mirrors.aliyun.com/pypi/simple
+
+ COPY install/qt /tmp/install/qt
+ RUN /tmp/install/qt/install_qt.sh
 
 
 
