@@ -1,4 +1,3 @@
-// 描述 CPU 的软中断统计信息
 syntax = "proto3";
 package monitor.proto;
 
