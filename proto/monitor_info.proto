@@ -1,3 +1,5 @@
+// 描述监控信息的总体情况，包括 CPU 负载、内存信息、网络信息等
+// 还定义了一个 GrpcManager 服务，包含两个 RPC 方法，分别用于设置和获取监控信息。
 syntax = "proto3";
 package monitor.proto;
 
@@ -86,9 +88,13 @@ message MonitorInfo{
 }
 
 service GrpcManager {
+  // 设置监控信息
+  // 客户端调用这个方法，将监控信息发送到服务器进行存储或处理
   rpc SetMonitorInfo(MonitorInfo) returns (google.protobuf.Empty) {
   }
 
+  // 获取监控信息
+  // 客户端调用这个方法，从服务器获取当前的监控信息
   rpc GetMonitorInfo(google.protobuf.Empty) returns (MonitorInfo) {
   }
 }

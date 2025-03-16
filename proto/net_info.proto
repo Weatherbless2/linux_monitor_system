@@ -1,3 +1,5 @@
+// 描述网络接口的相关信息，包括名称、发送和接收速率、发送和接收包速率
+
 syntax = "proto3";
 package monitor.proto;
 
