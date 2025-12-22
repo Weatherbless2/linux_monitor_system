@@ -14,7 +14,7 @@
 - 🔄 **Push 模式** - Worker 主动推送，降低 Manager 负载
 - 📈 **健康评分** - 多维度加权评分算法，快速评估服务器状态
 - 🔍 **丰富查询** - 9 个 gRPC 查询接口，支持历史数据、趋势分析、异常检测
-- 💾 **可选持久化** - 支持 MySQL 存储历史数据
+- 💾 **数据持久化** - MySQL 存储历史数据
 
 ## 📐 系统架构
 
@@ -32,7 +32,7 @@
         │ 内核模块/eBPF                         │ QueryService
         ▼                                      ▼
    /dev/cpu_stat_monitor                  9个查询接口
-   /dev/softirq_monitor
+   /dev/cpu_softirq_monitor
 ```
 
 ## 📁 项目结构
@@ -66,6 +66,7 @@ monitor_system/
 - **编译器**: GCC 9+ 或 Clang 10+ (支持 C++17)
 - **CMake**: 3.10+
 - **内核版本**: 5.4+ (eBPF 功能需要)
+- **MySQL**: 8.0+ (必须)
 
 ## 📦 安装
 
@@ -78,10 +79,8 @@ sudo apt install -y \
     build-essential cmake \
     libprotobuf-dev protobuf-compiler \
     libgrpc++-dev protobuf-compiler-grpc \
-    linux-headers-$(uname -r)
-
-# 可选：MySQL 支持
-sudo apt install -y libmysqlclient-dev
+    linux-headers-$(uname -r) \
+    mysql-server mysql-client libmysqlclient-dev
 ```
 
 ```bash
@@ -90,37 +89,88 @@ sudo yum install -y \
     gcc-c++ cmake \
     protobuf-devel protobuf-compiler \
     grpc-devel grpc-plugins \
-    kernel-devel
-
-# 可选：MySQL 支持
-sudo yum install -y mysql-devel
+    kernel-devel \
+    mysql-server mysql-devel
 ```
 
 ### eBPF/libbpf 配置（可选，用于高效网络采集）
 
 libbpf 相关依赖的安装和配置请参考 **AI智能网络检测知识库** 中的 libbpf 配置文档。
 
-### 编译
+## 💾 数据库配置
+
+### 1. 安装并启动 MySQL
+
+```bash
+sudo systemctl start mysql
+sudo systemctl enable mysql
+```
+
+### 2. 创建数据库和用户
+
+```bash
+sudo mysql -u root -p
+```
+
+```sql
+-- 创建数据库
+CREATE DATABASE monitor_db;
+
+-- 创建用户并授权
+CREATE USER 'monitor'@'localhost' IDENTIFIED BY 'monitor123';
+GRANT ALL PRIVILEGES ON monitor_db.* TO 'monitor'@'localhost';
+FLUSH PRIVILEGES;
+EXIT;
+```
+
+### 3. 导入表结构
+
+```bash
+mysql -u monitor -pmonitor123 monitor_db < manager/sql/init_server_performance.sql
+```
+
+### 4. 修改代码中的数据库配置
+
+在以下两个文件中修改数据库连接信息：
+
+**文件**: `manager/src/main.cpp` 和 `manager/src/host_manager.cpp`
+
+```cpp
+// 修改为你的 MySQL 配置
+const char* host = "localhost";
+const char* user = "monitor";        // 你的用户名
+const char* password = "monitor123"; // 你的密码
+const char* database = "monitor_db";
+```
+
+### 数据库表说明
+
+| 表名 | 说明 |
+|------|------|
+| `server_performance` | 主性能汇总表 |
+| `server_net_detail` | 网络接口详细数据 |
+| `server_disk_detail` | 磁盘设备详细数据 |
+| `server_mem_detail` | 内存分布详细数据 |
+| `server_softirq_detail` | 软中断详细数据 |
+
+## 🔨 编译
 
 ```bash
 # 克隆项目
-git clone https://github.com/yourusername/monitor_system.git
+git clone https://github.com/cpp-agan-team/monitor_system.git
 cd monitor_system
 
 # 创建构建目录
 mkdir build && cd build
 
-# 配置（完整功能，含 MySQL）
-cmake -DENABLE_MYSQL=ON ..
-
-# 或：配置（无 MySQL）
-cmake -DENABLE_MYSQL=OFF ..
+# 配置
+cmake ..
 
 # 编译
 make -j$(nproc)
 ```
 
-### 内核模块编译（可选，提升采集精度）
+### 内核模块编译
 
 ```bash
 cd worker/src/kmod
@@ -149,16 +199,17 @@ sudo insmod worker/src/kmod/cpu_stat_collector.ko
 sudo insmod worker/src/kmod/softirq_collector.ko
 
 # 验证加载
-ls /dev/cpu_stat_monitor /dev/softirq_monitor
+ls /dev/cpu_stat_monitor /dev/cpu_softirq_monitor
 ```
 
 ### 3. 启动 Worker（被监控机器）
 
 ```bash
-./build/worker/worker <manager_ip>:50051
+# 需要 sudo 权限以加载 eBPF 程序
+sudo ./build/worker/worker <manager_ip>:50051
 
 # 示例
-./build/worker/worker 192.168.1.100:50051
+sudo ./build/worker/worker 192.168.1.100:50051
 ```
 
 ### 4. 验证运行
@@ -167,6 +218,19 @@ Manager 端显示：
 ```
 Received monitor data from: server1
 Processed data from server1_192.168.1.101, score: 75.32
+```
+
+### 5. 停止服务和卸载内核模块
+
+```bash
+# 停止 Worker 和 Manager（Ctrl+C）
+
+# 卸载内核模块
+sudo rmmod softirq_collector
+sudo rmmod cpu_stat_collector
+
+# 验证卸载
+lsmod | grep -E "cpu_stat|softirq"
 ```
 
 ## 📊 监控指标
@@ -210,25 +274,6 @@ Score = CPU_Score × 35% + Mem_Score × 30% + Load_Score × 15%
 - Net_Score = 1 - bandwidth_usage / max_bandwidth
 ```
 
-## 💾 数据库配置（可选）
-
-如需持久化存储历史数据：
-
-```bash
-# 创建数据库
-mysql -u root -p -e "CREATE DATABASE monitor_system;"
-
-# 导入表结构
-mysql -u root -p monitor_system < manager/sql/init_server_performance.sql
-```
-
-数据库表：
-- `server_performance` - 主性能汇总表
-- `server_net_detail` - 网络接口详细数据
-- `server_disk_detail` - 磁盘设备详细数据
-- `server_mem_detail` - 内存分布详细数据
-- `server_softirq_detail` - 软中断详细数据
-
 ## ⚙️ 配置说明
 
 ### 服务器标识
@@ -255,30 +300,33 @@ web-server_10.0.0.5
 - **数据库**: MySQL (可选)
 - **构建系统**: CMake
 
-## 📝 开发计划
 
-- [ ] Prometheus 指标导出
-- [ ] 告警通知（邮件/钉钉/企业微信）
-- [ ] 集群自动发现
-- [ ] 容器监控支持
 
-## 🤝 贡献
-
-欢迎提交 Issue 和 Pull Request！
-
-1. Fork 本项目
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 提交 Pull Request
 
 ## 📄 许可证
 
 本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
 
-## 📧 联系方式
+## 作者
+cpp辅导的阿甘，“奔跑中的cpp / c++”知识星球的创始人，垂直cpp相关领域的辅导 
 
-如有问题或建议，请通过以下方式联系：
+vx： LLqueww 
 
-- 提交 [Issue](https://github.com/yourusername/monitor_system/issues)
-- 发送邮件至: your.email@example.com
+里面服务也不会变，四个坚守目前:
+
+1.每天都会看大家打卡内容，给出合理性建议。
+
+2.大家如果需要简历指导，心里迷茫需要疏导都可以进行预约周六一对一辅导。
+
+3.每周五晚上九点答疑聊天不会变。
+
+4.进去星球了，后续如果有什么其他活动，服务，不收费不收费(可以合理赚钱就收取下星球费用，但是不割韭菜，保持初心)
+
+（还有经历时间考验的独家私密资料）
+
+加入星球的同学都可以提问预约，一对一帮做简历，一对一 职业规划辅导 ，解惑。同时有高质量的项目以及学习资料
+
+学cpp基础，可以把最近开发的这个编程练习平台利用起来 
+
+cppagancoding.top
+
