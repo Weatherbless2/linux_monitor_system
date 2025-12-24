@@ -30,7 +30,7 @@ test_softirq
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
-Makefile
+/build/Makefile
 
 # Compiled binaries
 worker/worker
