@@ -75,6 +75,7 @@ static ktime_t timer_interval;               /* 定时器间隔 */
  * 获取 CPU 空闲时间
  * 需要考虑 NO_HZ 模式下的空闲时间统计
  */
+//获取CPU空闲时间
 static u64 cpu_stat_get_idle_time(int cpu)
 {
     u64 idle_time = -1ULL;
@@ -86,6 +87,7 @@ static u64 cpu_stat_get_idle_time(int cpu)
         /* 回退到传统方式 */
         idle_time = kcpustat_cpu(cpu).cpustat[CPUTIME_IDLE];
         idle_time = nsec_to_jiffies(idle_time);
+    
     } else {
         /* 转换微秒到 clock_t */
         idle_time = usecs_to_jiffies(idle_time);
@@ -104,7 +106,7 @@ static u64 cpu_stat_get_iowait_time(int cpu)
 
     /* 尝试获取精确的 iowait 时间（考虑 tickless 模式） */
     iowait_time = get_cpu_iowait_time_us(cpu, NULL);
-
+    
     if (iowait_time == -1ULL) {
         /* 回退到传统方式 */
         iowait_time = kcpustat_cpu(cpu).cpustat[CPUTIME_IOWAIT];
@@ -190,7 +192,7 @@ static int cpu_stat_release(struct inode *inode, struct file *file)
 }
 
 /*
- * mmap 回调 - 将内核数据映射到用户空间
+ * mmap 回调 - 将内核数据映射到用户空间，虚拟空间到真实页框的映射
  */
 static int cpu_stat_mmap(struct file *file, struct vm_area_struct *vma)
 {
@@ -344,3 +346,5 @@ static void __exit cpu_stat_collector_exit(void)
 
 module_init(cpu_stat_collector_init);
 module_exit(cpu_stat_collector_exit);
+//这段代码通过向内核申请一块物理内存，利用字符设备驱动机制将其暴露给用户空间（mmap），
+//并启动一个内核定时器每秒自动往这块内存里填充最新的 CPU 统计数据

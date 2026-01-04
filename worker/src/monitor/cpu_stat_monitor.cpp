@@ -15,6 +15,8 @@ void CpuStatMonitor::UpdateOnce(monitor::proto::MonitorInfo* monitor_info) {
     size_t stat_count = 128; // 假设最多128个CPU
     size_t stat_size = sizeof(struct cpu_stat) * stat_count;
     void* addr = mmap(nullptr, stat_size, PROT_READ, MAP_SHARED, fd, 0);
+    //代码中使用mmap()直接将内核态设备数据映射到当前进程的虚拟地址空间，
+    //仅需一次数据拷贝（内核态数据到映射内存区域），且映射完成后进程可直接访问该内存，无需再进行数据迁移。
     if (addr == MAP_FAILED) {
         close(fd);
         return;
@@ -87,9 +89,14 @@ void CpuStatMonitor::UpdateOnce(monitor::proto::MonitorInfo* monitor_info) {
         cached.guest = stats[i].guest;
         cached.guest_nice = stats[i].guest_nice;
     }
-
+//先通过monitor_info指针创建并获取一个新的cpu_stat子消息句柄cpu_stat_msg，
+//再分别计算当前stats[i]和历史old对应的 CPU 总运行时间、忙碌时间，
+//以及 CPU 整体使用率和用户态、系统态、空闲态等各类细分状态的使用率，
+//最后将 CPU 名称和所有计算得到的使用率数据通过cpu_stat_msg的set_xxx()系列方法
+//填充到这个新创建的cpu_stat子消息中，完成单条 CPU 状态消息的构造与数据赋值。
     munmap(addr, stat_size);
     close(fd);
     return;
+    
 }
 }  // namespace monitor

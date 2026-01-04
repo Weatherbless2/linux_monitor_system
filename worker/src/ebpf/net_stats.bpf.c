@@ -16,7 +16,10 @@
  * - 修改、丢弃、重定向数据包
  * - 获取精确的网卡信息
  */
-
+//这段代码是一个挂载在 Linux 内核流量控制（TC）层的 eBPF 程序，
+// 它通过在网络接口的入口（Ingress）和出口（Egress）拦截数据包，
+// 利用原子操作实时统计每个网卡的接收与发送流量（包括字节数和包数），
+// 并将这些统计数据保存在内核 BPF 哈希映射中供用户空间程序读取，最后无损放行数据包。
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
@@ -51,6 +54,8 @@ struct {
  */
 static __always_inline void update_stats(__u32 ifindex, __u32 len, bool is_rx)
 {
+    //告诉编译器（Clang/LLVM），在编译的时候，不要生成一个真正的函数调用指令（比如 call），
+    // 而是直接把这个函数里的所有代码复制粘贴到调用它的地方（即 tc_ingress 和 tc_egress 函数内部）
     struct net_stats *stats;
     struct net_stats new_stats = {};
 
@@ -68,11 +73,11 @@ static __always_inline void update_stats(__u32 ifindex, __u32 len, bool is_rx)
     } else {
         /* 使用原子操作更新已有统计 */
         if (is_rx) {
-            __sync_fetch_and_add(&stats->rcv_bytes, len);
-            __sync_fetch_and_add(&stats->rcv_packets, 1);
+            __sync_fetch_and_add(&stats->rcv_bytes, len);//接收到的总字节数
+            __sync_fetch_and_add(&stats->rcv_packets, 1);//接收到的总包数
         } else {
-            __sync_fetch_and_add(&stats->snd_bytes, len);
-            __sync_fetch_and_add(&stats->snd_packets, 1);
+            __sync_fetch_and_add(&stats->snd_bytes, len);//发送的总字节数
+            __sync_fetch_and_add(&stats->snd_packets, 1);//发送的总包数
         }
     }
 }

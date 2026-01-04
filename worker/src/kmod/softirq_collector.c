@@ -45,6 +45,7 @@ struct softirq_stat {
     uint64_t sched;         /* SCHED_SOFTIRQ */
     uint64_t hrtimer;       /* HRTIMER_SOFTIRQ */
     uint64_t rcu;           /* RCU_SOFTIRQ */
+    
 };
 
 /* 全局变量 */

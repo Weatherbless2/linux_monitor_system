@@ -14,10 +14,13 @@ namespace monitor {
 
 #ifdef ENABLE_MYSQL
 namespace {
-const char* MYSQL_HOST = "127.0.0.1";
-const char* MYSQL_USER = "monitor";
-const char* MYSQL_PASS = "monitor123";
-const char* MYSQL_DB = "monitor_db";
+// ==========================================
+// 修改为你的 MySQL 配置
+// ==========================================
+const char* host = "localhost";
+const char* user = "monitor";        // 你的用户名
+const char* password = "monitor123"; // 你的密码
+const char* database = "monitor_db";
 
 // 用于详细表变化率计算的历史数据
 struct NetDetailSample {
@@ -315,16 +318,8 @@ std::string HostManager::GetBestHost() {
 
 double HostManager::CalcScore(const monitor::proto::MonitorInfo& info) {
   // ============================================================
-  // 性能评分模型 - 针对学校选课/查成绩系统高并发场景优化
+  // 性能评分模型
   // ============================================================
-  // 权重配置：
-  // - CPU 使用率: 35%
-  // - 内存使用率: 30%
-  // - CPU 负载:   15%
-  // - 磁盘 IO:    15%
-  // - 网络带宽:    5% (收发各 2.5%)
-  // ============================================================
-  
   const double cpu_weight = 0.35;
   const double mem_weight = 0.30;
   const double load_weight = 0.15;
@@ -396,7 +391,12 @@ void HostManager::WriteToMysql(
     std::cerr << "mysql_init failed\n";
     return;
   }
-  if (!mysql_real_connect(conn, MYSQL_HOST, MYSQL_USER, MYSQL_PASS, MYSQL_DB, 0,
+  
+  // ==========================================
+  // 修正：这里使用你定义的变量 host, user, password, database
+  // 而不是使用宏 MYSQL_HOST 等
+  // ==========================================
+  if (!mysql_real_connect(conn, host, user, password, database, 0,
                           NULL, 0)) {
     std::cerr << "mysql_real_connect failed: " << mysql_error(conn) << "\n";
     mysql_close(conn);

@@ -23,7 +23,8 @@ struct HostData {
 using DataReceivedCallback = std::function<void(const monitor::proto::MonitorInfo&)>;
 
 // gRPC 服务实现类 - 接收工作者推送的监控数据
-class GrpcServerImpl : public monitor::proto::GrpcManager::Service {
+class GrpcServerImpl : public monitor::proto::GrpcManager::Service 
+{
  public:
   GrpcServerImpl() = default;
   virtual ~GrpcServerImpl() = default;

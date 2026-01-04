@@ -7,9 +7,14 @@ if(NOT gRPC_FOUND)
     find_library(GRPC_LIBRARY grpc)
     find_library(GRPCPP_LIBRARY grpc++)
     if(GRPC_LIBRARY AND GRPCPP_LIBRARY)
-        add_library(grpc_lib INTERFACE)
-        target_link_libraries(grpc_lib INTERFACE ${GRPC_LIBRARY} ${GRPCPP_LIBRARY})
-        add_library(gRPC::grpc++ ALIAS grpc_lib)
+        # 【修改点 1】将 grpc_lib 改名为 manager_grpc_lib，避免与 worker 冲突
+        add_library(manager_grpc_lib INTERFACE)
+        target_link_libraries(manager_grpc_lib INTERFACE ${GRPC_LIBRARY} ${GRPCPP_LIBRARY})
+        
+        # 【修改点 2】先检查别名是否存在，不存在才创建，防止重复定义错误
+        if(NOT TARGET gRPC::grpc++)
+            add_library(gRPC::grpc++ ALIAS manager_grpc_lib)
+        endif()
     endif()
 endif()
 

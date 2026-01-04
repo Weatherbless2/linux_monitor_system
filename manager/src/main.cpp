@@ -11,11 +11,15 @@
 #include "rpc/grpc_server.h"
 #include "rpc/query_service.h"
 
+// ==========================================
+// 修改为你的 MySQL 配置
+// ==========================================
+const char* host = "localhost";
+const char* user = "monitor";        // 你的用户名
+const char* password = "monitor123"; // 你的密码
+const char* database = "monitor_db";
+
 constexpr char kDefaultListenAddress[] = "0.0.0.0:50051";
-constexpr char kDefaultMysqlHost[] = "127.0.0.1";
-constexpr char kDefaultMysqlUser[] = "monitor";
-constexpr char kDefaultMysqlPass[] = "monitor123";
-constexpr char kDefaultMysqlDb[] = "monitor_db";
 
 int main(int argc, char* argv[]) {
   std::string listen_address = kDefaultListenAddress;
@@ -44,8 +48,8 @@ int main(int argc, char* argv[]) {
   // 创建 QueryManager 并初始化
   monitor::QueryManager query_mgr;
 #ifdef ENABLE_MYSQL
-  if (query_mgr.Init(kDefaultMysqlHost, kDefaultMysqlUser, kDefaultMysqlPass,
-                     kDefaultMysqlDb)) {
+  // 修正：直接使用你配置的变量初始化，而不是默认常量
+  if (query_mgr.Init(host, user, password, database)) {
     std::cout << "QueryManager initialized successfully" << std::endl;
   } else {
     std::cerr << "Warning: QueryManager initialization failed, "

@@ -31,9 +31,10 @@ struct net_stats {
 
 namespace monitor {
 
-// 获取系统所有网卡的 ifindex
+// 获取系统所有网卡的 ifindex索引号
 static std::vector<uint32_t> GetAllIfIndexes() {
     std::vector<uint32_t> indexes;
+
     DIR* dir = opendir("/sys/class/net");
     if (!dir) return indexes;
 

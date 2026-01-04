@@ -8,6 +8,13 @@
  * sudo ./test_net_ebpf
  */
 
+
+
+//这段代码作为用户空间控制器，负责将 eBPF 字节码加载到内核，
+// 并将其挂载到所有物理网卡的 TC 入口和出口，
+// 随后在一个无限循环中定期读取内核 Map 中的统计数据以计算并显示实时网络流量速率，
+// 最后在接收到停止信号后清理所有挂载点并释放资源
+
 #include <bpf/libbpf.h>
 #include <bpf/bpf.h>
 #include <net/if.h>

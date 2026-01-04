@@ -1,8 +1,20 @@
-# Build directory
+# ========================
+# Build System & CMake
+# ========================
 build/
 cmake/
+# [新增] 防止有人在根目录执行 cmake . 产生的垃圾
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+install_manifest.txt
+*.ninja
 
-# Kernel module build artifacts
+# ========================
+# Kernel Module (内核模块)
+# ========================
 *.o
 *.ko
 *.mod
@@ -11,37 +23,66 @@ cmake/
 .*.cmd
 Module.symvers
 modules.order
+# [新增] 内核编译生成的临时目录
+.tmp_versions/
 
-# eBPF build artifacts
+# ========================
+# eBPF Artifacts
+# ========================
 *.skel.h
 .output/
+# [重要新增] 这是一个巨大的自动生成头文件，千万别上传
+vmlinux.h
+*.bpf.o
 
-# Test binaries
-test_cpu_stat
-test_softirq
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# CMake
-CMakeCache.txt
-CMakeFiles/
-cmake_install.cmake
-/build/Makefile
-
-# Compiled binaries
-worker/worker
-manager/manager
-
-# Proto generated files
+# ========================
+# Protobuf & gRPC Generated
+# ========================
+# 忽略所有自动生成的 C++ 代码
 *.pb.cc
 *.pb.h
 *.grpc.pb.cc
 *.grpc.pb.h
 
-# Libraries
+# ========================
+# Compiled Binaries (二进制)
+# ========================
+# [修改] 更通用的忽略规则，防止漏网之鱼
+worker/worker
+manager/manager
+# 测试程序
+test_*
+# 静态库与动态库
 *.a
 *.so
+*.so.*
+
+# ========================
+# IDE & Editors
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+# [新增] Mac 系统垃圾文件 (以防万一你或队友用 Mac)
+.DS_Store
+# [新增] Windows 缩略图缓存 (WSL 环境常见)
+Thumbs.db
+
+# ========================
+# Logs & Data
+# ========================
+*.log
+*.out
+# [新增] 忽略本地数据库文件 (如果有)
+*.db
+*.sqlite
+
+# ========================
+# [重要] Security (安全)
+# ========================
+# 绝对不要上传密钥和证书！
+*.pem
+*.key
+*.crt
