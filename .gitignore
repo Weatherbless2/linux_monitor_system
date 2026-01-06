@@ -85,4 +85,4 @@ Thumbs.db
 # 绝对不要上传密钥和证书！
 *.pem
 *.key
-*.crt
+*.crt*.deb
