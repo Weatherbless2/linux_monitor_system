@@ -1,10 +1,13 @@
 #include "host_manager.h"
+#include "utils/safe_queue.h" // [必须] 引入队列头文件
 
 #include <ctime>
 #include <iomanip>
 #include <iostream>
 #include <map>
 #include <sstream>
+#include <vector>
+#include <functional> // for std::hash
 
 #ifdef ENABLE_MYSQL
 #include <mysql/mysql.h>
@@ -15,20 +18,19 @@ namespace monitor {
 #ifdef ENABLE_MYSQL
 namespace {
 // ==========================================
-// 修改为你的 MySQL 配置
+// MySQL 配置
 // ==========================================
 const char* host = "localhost";
-const char* user = "monitor";        // 你的用户名
-const char* password = "monitor123"; // 你的密码
+const char* user = "monitor";
+const char* password = "monitor123";
 const char* database = "monitor_db";
 
-// 用于详细表变化率计算的历史数据
+// 历史数据结构体定义
 struct NetDetailSample {
   float rcv_bytes_rate = 0;
   float rcv_packets_rate = 0;
   float snd_bytes_rate = 0;
   float snd_packets_rate = 0;
-  // 错误和丢弃统计
   uint64_t err_in = 0;
   uint64_t err_out = 0;
   uint64_t drop_in = 0;
@@ -58,11 +60,12 @@ struct DiskDetailSample {
   float util_percent = 0;
 };
 
-// 历史数据存储 (host_name -> net_name/cpu_name/disk_name -> sample)
-static std::map<std::string, std::map<std::string, NetDetailSample>> last_net_samples;
-static std::map<std::string, std::map<std::string, SoftIrqSample>> last_softirq_samples;
-static std::map<std::string, MemDetailSample> last_mem_samples;
-static std::map<std::string, std::map<std::string, DiskDetailSample>> last_disk_samples;
+// [分片存储]：将单一 Map 改为 Vector<Map>，实现无锁并发访问
+// 索引方式：index = hash(host_name) % thread_count
+static std::vector<std::map<std::string, std::map<std::string, NetDetailSample>>> last_net_samples_shards;
+static std::vector<std::map<std::string, std::map<std::string, SoftIrqSample>>> last_softirq_samples_shards;
+static std::vector<std::map<std::string, MemDetailSample>> last_mem_samples_shards;
+static std::vector<std::map<std::string, std::map<std::string, DiskDetailSample>>> last_disk_samples_shards;
 
 }  // namespace
 #endif
@@ -73,10 +76,13 @@ struct NetSample {
   double last_out_bytes = 0;
   std::chrono::system_clock::time_point last_time;
 };
-static std::map<std::string, NetSample> net_samples;
+// [分片存储]
+static std::vector<std::map<std::string, NetSample>> net_samples_shards;
 
 // 用于变化率计算的性能采样数据
-struct PerfSample {
+struct 
+
+PerfSample {
   float cpu_percent = 0, usr_percent = 0, system_percent = 0;
   float nice_percent = 0, idle_percent = 0, io_wait_percent = 0;
   float irq_percent = 0, soft_irq_percent = 0;
@@ -86,9 +92,41 @@ struct PerfSample {
   float net_in_rate = 0, net_out_rate = 0;
   float score = 0;
 };
-static std::map<std::string, PerfSample> last_perf_samples;
+// [分片存储]
+static std::vector<std::map<std::string, PerfSample>> last_perf_samples_shards;
+//static std::vector<std::map<<std::string.PerfSample>> lasetone;
 
-HostManager::HostManager() : running_(false) {
+
+// 构造函数
+HostManager::HostManager(size_t thread_count) 
+    : thread_count_(thread_count), running_(false) {
+  
+  if (thread_count_ < 1) thread_count_ = 1;
+
+  std::cout << "HostManager initializing with " << thread_count_ << " worker threads..." << std::endl;
+
+  // 初始化分片存储空间
+  // 注意：这里简单的 resize 假设 HostManager 全局唯一
+  if (last_perf_samples_shards.empty()) {
+      last_perf_samples_shards.resize(thread_count_);
+      net_samples_shards.resize(thread_count_);
+      #ifdef ENABLE_MYSQL
+      last_net_samples_shards.resize(thread_count_);
+      last_softirq_samples_shards.resize(thread_count_);
+      last_mem_samples_shards.resize(thread_count_);
+      last_disk_samples_shards.resize(thread_count_);
+      #endif
+  }
+
+  // 初始化 N 个队列和 N 个线程
+  for (size_t i = 0; i < thread_count_; ++i) {
+      queues_.push_back(std::make_shared<SafeQueue<monitor::proto::MonitorInfo>>());
+      
+      // 启动消费者线程，绑定到 ConsumeMessage 函数
+      worker_threads_.emplace_back([this, i] {
+          this->ConsumeMessage(i);
+      });
+  }
 }
 
 HostManager::~HostManager() {
@@ -97,14 +135,29 @@ HostManager::~HostManager() {
 
 void HostManager::Start() {
   running_ = true;
+  // 启动清理过期数据的线程
   thread_ = std::make_unique<std::thread>(&HostManager::ProcessLoop, this);
 }
 
 void HostManager::Stop() {
+  if (!running_) return;
   running_ = false;
+
+  // 1. 停止所有队列 (唤醒等待的线程)
+  for (auto& queue : queues_) {
+      if (queue) queue->Stop();
+  }
+
+  // 2. 等待 Worker 线程退出
+  for (auto& t : worker_threads_) {
+      if (t.joinable()) t.join();
+  }
+
+  // 3. 等待清理线程退出
   if (thread_ && thread_->joinable()) {
     thread_->join();
   }
+  std::cout << "HostManager stopped." << std::endl;
 }
 
 void HostManager::ProcessLoop() {
@@ -126,8 +179,45 @@ void HostManager::ProcessLoop() {
   }
 }
 
+// [生产者]：gRPC 线程调用，只做分发，不阻塞
 void HostManager::OnDataReceived(const monitor::proto::MonitorInfo& info) {
-  // 构建服务器唯一标识: hostname_ip
+    std::string host_name = info.name();
+    if (info.has_host_info() && !info.host_info().hostname().empty()) {
+        host_name = info.host_info().hostname();
+    }
+
+    // 必须有标识符才能 Hash
+    if (host_name.empty()) {
+         if (!queues_.empty()) queues_[0]->Push(info); // 兜底
+         return;
+    }
+
+    // 计算 Hash 并路由到指定队列
+    std::hash<std::string> hasher;
+    size_t index = hasher(host_name) % thread_count_;
+
+    if (index < queues_.size()) {
+        queues_[index]->Push(info);
+    }
+}
+
+// [消费者]：后台线程循环
+void HostManager::ConsumeMessage(int queue_index) {
+    monitor::proto::MonitorInfo info;
+    auto my_queue = queues_[queue_index];
+
+    while (running_) {
+        // Pop 会阻塞等待，直到有数据
+        if (my_queue->Pop(info)) {
+            // [核心] 调用具体的业务处理逻辑
+            ProcessData(info);
+        }
+    }
+}
+
+// [业务逻辑]：这里承载了原先 OnDataReceived 的所有重活
+void HostManager::ProcessData(const monitor::proto::MonitorInfo& info) {
+  // 1. 构建服务器唯一标识
   std::string host_name;
   if (info.has_host_info()) {
     const auto& host_info = info.host_info();
@@ -135,7 +225,7 @@ void HostManager::OnDataReceived(const monitor::proto::MonitorInfo& info) {
     std::string ip = host_info.ip_address();
     
     if (!hostname.empty() && !ip.empty()) {
-      host_name = hostname + "_" + ip;  // 格式: hostname_192.168.1.100
+      host_name = hostname + "_" + ip;
     } else if (!hostname.empty()) {
       host_name = hostname;
     } else if (!ip.empty()) {
@@ -143,27 +233,53 @@ void HostManager::OnDataReceived(const monitor::proto::MonitorInfo& info) {
     }
   }
   
-  // 兼容旧版本：如果 host_info 为空，使用 name 字段
-  if (host_name.empty()) {
-    host_name = info.name();
-  }
-  
+  if (host_name.empty()) host_name = info.name();
   if (host_name.empty()) {
     std::cerr << "Received data with empty server identifier" << std::endl;
     return;
   }
 
+  // 2. 计算当前 Host 属于哪个分片索引 (用于获取历史数据)
+  std::hash<std::string> hasher;
+  size_t shard_idx = hasher(host_name) % thread_count_;
+
+
+
+
+// =========================================================
+  // [新增] 添加可视化打印代码
+  // =========================================================
+  // 获取当前线程 ID
+  std::ostringstream ss;
+  ss << std::this_thread::get_id();
+  
+  // 打印格式：[Worker-线程ID] 处理主机: ServerA (分片: 0)
+  std::cout << "\033[1;33m" // 设置颜色为黄色，方便在刷屏中看清
+            << "[Worker-" << ss.str() << "] "
+            << "Processing Host: " << host_name 
+            << " | Shard Index: " << shard_idx 
+            << "\033[0m" << std::endl;
+  // =========================================================
+
+
+
+
+
+
+
+
+  // 3. 计算评分
   double score = CalcScore(info);
   auto now = std::chrono::system_clock::now();
 
-  // 网络速率计算
+  // 4. 网络速率计算
   double net_in_rate = 0, net_out_rate = 0;
   if (info.net_info_size() > 0) {
     net_in_rate = info.net_info(0).rcv_rate() / (1024.0 * 1024.0);
     net_out_rate = info.net_info(0).send_rate() / (1024.0 * 1024.0);
   }
 
-  // 当前采样
+  // 5. 提取当前性能快照
   PerfSample curr;
   if (info.cpu_stat_size() > 0) {
     const auto& cpu = info.cpu_stat(0);
@@ -177,6 +293,7 @@ void HostManager::OnDataReceived(const monitor::proto::MonitorInfo& info) {
     curr.soft_irq_percent = cpu.soft_irq_percent();
   }
   if (info.has_cpu_load()) {
+    
     curr.load_avg_1 = info.cpu_load().load_avg_1();
     curr.load_avg_3 = info.cpu_load().load_avg_3();
     curr.load_avg_15 = info.cpu_load().load_avg_15();
@@ -191,8 +308,9 @@ void HostManager::OnDataReceived(const monitor::proto::MonitorInfo& info) {
   curr.net_out_rate = net_out_rate;
   curr.score = score;
 
-  // 变化率计算
-  PerfSample last = last_perf_samples[host_name];
+  // 6. 获取历史数据并计算变化率 (使用 shard_idx 访问分片 Map，无锁)
+  PerfSample last = last_perf_samples_shards[shard_idx][host_name];
+  
   auto rate = [](float now_val, float last_val) -> float {
     if (last_val == 0) return 0;
     return (now_val - last_val) / last_val;
@@ -208,7 +326,7 @@ void HostManager::OnDataReceived(const monitor::proto::MonitorInfo& info) {
   float soft_irq_percent_rate = rate(curr.soft_irq_percent, last.soft_irq_percent);
   float load_avg_1_rate = rate(curr.load_avg_1, last.load_avg_1);
   float load_avg_3_rate = rate(curr.load_avg_3, last.load_avg_3);
-  float load_avg_15_rate = rate(curr.load_avg_15, last.load_avg_15);
+  float load_avg_1_rate_15 = rate(curr.load_avg_15, last.load_avg_15);
   float mem_used_percent_rate = rate(curr.mem_used_percent, last.mem_used_percent);
   float mem_total_rate = rate(curr.mem_total, last.mem_total);
   float mem_free_rate = rate(curr.mem_free, last.mem_free);
@@ -216,85 +334,26 @@ void HostManager::OnDataReceived(const monitor::proto::MonitorInfo& info) {
   float net_in_rate_rate = rate(curr.net_in_rate, last.net_in_rate);
   float net_out_rate_rate = rate(curr.net_out_rate, last.net_out_rate);
 
-  last_perf_samples[host_name] = curr;
+  // 7. 更新历史数据
+  last_perf_samples_shards[shard_idx][host_name] = curr;
 
+  // 8. 更新实时内存表 (供查询用，需加锁)
   {
     std::lock_guard<std::mutex> lock(mtx_);
     host_scores_[host_name] = HostScore{info, score, now};
   }
 
-  // 写入所有表
+  // 9. 写入 MySQL 数据库
   WriteToMysql(host_name, HostScore{info, score, now}, net_in_rate, net_out_rate,
                cpu_percent_rate, usr_percent_rate, system_percent_rate,
                nice_percent_rate, idle_percent_rate, io_wait_percent_rate,
                irq_percent_rate, soft_irq_percent_rate, 0, 0, 0,
-               load_avg_1_rate, load_avg_3_rate, load_avg_15_rate,
+               load_avg_1_rate, rate(curr.load_avg_3, last.load_avg_3), load_avg_1_rate_15,
                mem_used_percent_rate, mem_total_rate, mem_free_rate,
                mem_avail_rate, net_in_rate_rate, net_out_rate_rate, 0, 0);
 
-  std::cout << "\n================== Received Data ==================" << std::endl;
-  std::cout << "Server: " << host_name << ", Score: " << score << std::endl;
-  
-  // CPU 详细信息
-  std::cout << "\n--- CPU ---" << std::endl;
-  std::cout << "  Usage: " << curr.cpu_percent << "%, "
-            << "User: " << curr.usr_percent << "%, "
-            << "System: " << curr.system_percent << "%" << std::endl;
-  std::cout << "  Nice: " << curr.nice_percent << "%, "
-            << "Idle: " << curr.idle_percent << "%, "
-            << "IOWait: " << curr.io_wait_percent << "%" << std::endl;
-  std::cout << "  IRQ: " << curr.irq_percent << "%, "
-            << "SoftIRQ: " << curr.soft_irq_percent << "%" << std::endl;
-  std::cout << "  Load: " << curr.load_avg_1 << "/" << curr.load_avg_3 << "/" << curr.load_avg_15 << std::endl;
-  
-  // 内存详细信息
-  std::cout << "\n--- Memory ---" << std::endl;
-  std::cout << "  Used: " << curr.mem_used_percent << "%, "
-            << "Total: " << curr.mem_total << " MB" << std::endl;
-  std::cout << "  Free: " << curr.mem_free << " MB, "
-            << "Avail: " << curr.mem_avail << " MB" << std::endl;
-  
-  // 网络详细信息
-  std::cout << "\n--- Network ---" << std::endl;
-  std::cout << "  In: " << net_in_rate * 1024 * 1024 << " B/s, "
-            << "Out: " << net_out_rate * 1024 * 1024 << " B/s" << std::endl;
-  for (int i = 0; i < info.net_info_size(); ++i) {
-    const auto& net = info.net_info(i);
-    std::cout << "  [" << net.name() << "] Recv: " << net.rcv_rate() << " B/s, "
-              << "Send: " << net.send_rate() << " B/s, "
-              << "Drops: " << net.drop_in() << "/" << net.drop_out() << std::endl;
-  }
-  
-  // 磁盘详细信息
-  std::cout << "\n--- Disk ---" << std::endl;
-  float max_disk_util = 0;
-  for (int i = 0; i < info.disk_info_size(); ++i) {
-    const auto& disk = info.disk_info(i);
-    std::cout << "  [" << disk.name() << "] "
-              << "Read: " << disk.read_bytes_per_sec() / 1024.0 << " KB/s, "
-              << "Write: " << disk.write_bytes_per_sec() / 1024.0 << " KB/s, "
-              << "Util: " << disk.util_percent() << "%" << std::endl;
-    if (disk.util_percent() > max_disk_util) max_disk_util = disk.util_percent();
-  }
-  if (info.disk_info_size() == 0) {
-    std::cout << "  No disk data" << std::endl;
-  }
-  
-  // 软中断信息
-  std::cout << "\n--- SoftIRQ ---" << std::endl;
-  std::cout << "  CPU cores with softirq data: " << info.soft_irq_size() << std::endl;
-  
-  // 变化率信息
-  std::cout << "\n--- Change Rates ---" << std::endl;
-  std::cout << "  CPU: " << cpu_percent_rate * 100 << "%, "
-            << "Mem: " << mem_used_percent_rate * 100 << "%, "
-            << "Load: " << load_avg_1_rate * 100 << "%" << std::endl;
-  std::cout << "  NetIn: " << net_in_rate_rate * 100 << "%, "
-            << "NetOut: " << net_out_rate_rate * 100 << "%" << std::endl;
-  
-  std::cout << "\n--- Database ---" << std::endl;
-  std::cout << "  Data saved to MySQL (monitor_db)" << std::endl;
-  std::cout << "====================================================\n" << std::endl;
+  // 告警逻辑可以在这里添加
+  // if (curr.cpu_percent > 90) { ... }
 }
 
 std::unordered_map<std::string, HostScore> HostManager::GetAllHostScores() {
@@ -317,60 +376,46 @@ std::string HostManager::GetBestHost() {
 
 
 double HostManager::CalcScore(const monitor::proto::MonitorInfo& info) {
-  // ============================================================
-  // 性能评分模型
-  // ============================================================
+  // 简化的评分逻辑
   const double cpu_weight = 0.35;
   const double mem_weight = 0.30;
   const double load_weight = 0.15;
   const double disk_weight = 0.15;
   const double net_weight = 0.05;
 
-  const double load_coefficient = 1.5;  // I/O 密集型场景系数
-  const double max_bandwidth = 125000000.0;  // 1Gbps
-
   double cpu_percent = 0, load_avg_1 = 0, mem_percent = 0;
   double net_recv_rate = 0, net_send_rate = 0, disk_util = 0;
   int cpu_cores = 1;
 
   if (info.cpu_stat_size() > 0) {
+    
     cpu_percent = info.cpu_stat(0).cpu_percent();
     cpu_cores = info.cpu_stat_size() - 1;
     if (cpu_cores < 1) cpu_cores = 1;
   }
-  if (info.has_cpu_load()) {
-    load_avg_1 = info.cpu_load().load_avg_1();
-  }
-  if (info.has_mem_info()) {
-    mem_percent = info.mem_info().used_percent();
-  }
+  if (info.has_cpu_load()) load_avg_1 = info.cpu_load().load_avg_1();
+  if (info.has_mem_info()) mem_percent = info.mem_info().used_percent();
   if (info.net_info_size() > 0) {
     net_recv_rate = info.net_info(0).rcv_rate();
     net_send_rate = info.net_info(0).send_rate();
   }
-  if (info.disk_info_size() > 0) {
-    for (int i = 0; i < info.disk_info_size(); ++i) {
-      double util = info.disk_info(i).util_percent();
+  for (int i = 0; i < info.disk_info_size(); ++i) {
+      float util = info.disk_info(i).util_percent();
       if (util > disk_util) disk_util = util;
-    }
   }
 
-  // 反向归一化
   auto clamp = [](double v) { return v < 0 ? 0 : (v > 1 ? 1 : v); };
   
   double cpu_score = clamp(1.0 - cpu_percent / 100.0);
   double mem_score = clamp(1.0 - mem_percent / 100.0);
-  double load_score = clamp(1.0 - load_avg_1 / (cpu_cores * load_coefficient));
+  double load_score = clamp(1.0 - load_avg_1 / (cpu_cores * 1.5));
   double disk_score = clamp(1.0 - disk_util / 100.0);
-  double net_recv_score = clamp(1.0 - net_recv_rate / max_bandwidth);
-  double net_send_score = clamp(1.0 - net_send_rate / max_bandwidth);
-  double net_score = (net_recv_score + net_send_score) / 2.0;
+  double net_score = clamp(1.0 - (net_recv_rate + net_send_rate) / (2 * 125000000.0));
 
-  double score = cpu_score * cpu_weight + mem_score * mem_weight +
+  double score = (cpu_score * cpu_weight + mem_score * mem_weight +
                  load_score * load_weight + disk_score * disk_weight +
-                 net_score * net_weight;
+                 net_score * net_weight) * 100.0;
 
-  score *= 100.0;
   return score < 0 ? 0 : (score > 100 ? 100 : score);
 }
 
@@ -392,18 +437,16 @@ void HostManager::WriteToMysql(
     return;
   }
   
-  // ==========================================
-  // 修正：这里使用你定义的变量 host, user, password, database
-  // 而不是使用宏 MYSQL_HOST 等
-  // ==========================================
-  if (!mysql_real_connect(conn, host, user, password, database, 0,
-                          NULL, 0)) {
+  if (!mysql_real_connect(conn, host, user, password, database, 0, NULL, 0)) {
     std::cerr << "mysql_real_connect failed: " << mysql_error(conn) << "\n";
     mysql_close(conn);
     return;
   }
 
-  // 时间戳
+  // 重新计算 shard_idx 以访问正确的分片数据
+  std::hash<std::string> hasher;
+  size_t shard_idx = hasher(host_name) % thread_count_;
+
   std::time_t t = std::chrono::system_clock::to_time_t(host_score.timestamp);
   std::tm tm_time;
   localtime_r(&t, &tm_time);
@@ -416,7 +459,7 @@ void HostManager::WriteToMysql(
     return (now_val - last_val) / last_val;
   };
 
-  // ========== 1. 写入主表 server_performance ==========
+  // 1. 写入主表
   {
     float total = 0, free_mem = 0, avail = 0, send_rate = 0, rcv_rate = 0;
     float cpu_percent = 0, usr_percent = 0, system_percent = 0;
@@ -451,14 +494,15 @@ void HostManager::WriteToMysql(
       load_avg_3 = info.cpu_load().load_avg_3();
       load_avg_15 = info.cpu_load().load_avg_15();
     }
-    // 获取磁盘利用率最大值（用于评分）
     for (int i = 0; i < info.disk_info_size(); ++i) {
       float util = info.disk_info(i).util_percent();
       if (util > disk_util_percent) disk_util_percent = util;
     }
 
-    // 计算磁盘利用率变化率
-    static std::map<std::string, float> last_disk_util;
+    // [改进] 使用 thread_local 来存储磁盘利用率历史，保证线程安全且无锁
+    // 因为 hash sharding 保证了同一个 host 永远在同一个线程处理
+    thread_local std::map<std::string, float> last_disk_util;
+    
     float disk_util_percent_rate = 0;
     if (last_disk_util.count(host_name) && last_disk_util[host_name] != 0) {
       disk_util_percent_rate = (disk_util_percent - last_disk_util[host_name]) / last_disk_util[host_name];
@@ -496,7 +540,7 @@ void HostManager::WriteToMysql(
     mysql_query(conn, oss.str().c_str());
   }
 
-  // ========== 2. 写入网络详细表 server_net_detail ==========
+  // 2. 写入网络详细表
   for (int i = 0; i < info.net_info_size(); ++i) {
     const auto& net = info.net_info(i);
     std::string net_name = net.name();
@@ -511,9 +555,8 @@ void HostManager::WriteToMysql(
     curr.drop_in = net.drop_in();
     curr.drop_out = net.drop_out();
 
-    NetDetailSample& last = last_net_samples[host_name][net_name];
+    NetDetailSample& last = last_net_samples_shards[shard_idx][host_name][net_name];
     
-    // 计算错误/丢弃变化率
     auto rate_u64 = [](uint64_t now_val, uint64_t last_val) -> float {
       if (last_val == 0) return 0;
       return static_cast<float>(now_val - last_val) / static_cast<float>(last_val);
@@ -542,11 +585,10 @@ void HostManager::WriteToMysql(
         << rate_u64(curr.drop_out, last.drop_out)
         << ",'" << time_buf << "')";
     mysql_query(conn, oss.str().c_str());
-    
     last = curr;
   }
 
-  // ========== 3. 写入软中断详细表 server_softirq_detail ==========
+  // 3. 写入软中断详细表
   for (int i = 0; i < info.soft_irq_size(); ++i) {
     const auto& sirq = info.soft_irq(i);
     std::string cpu_name = sirq.cpu();
@@ -563,7 +605,7 @@ void HostManager::WriteToMysql(
     curr.hrtimer = sirq.hrtimer();
     curr.rcu = sirq.rcu();
 
-    SoftIrqSample& last = last_softirq_samples[host_name][cpu_name];
+    SoftIrqSample& last = last_softirq_samples_shards[shard_idx][host_name][cpu_name];
     
     std::ostringstream oss;
     oss << "INSERT INTO server_softirq_detail "
@@ -584,36 +626,24 @@ void HostManager::WriteToMysql(
         << rate(curr.hrtimer, last.hrtimer) << "," << rate(curr.rcu, last.rcu)
         << ",'" << time_buf << "')";
     mysql_query(conn, oss.str().c_str());
-    
     last = curr;
   }
 
-  // ========== 4. 写入内存详细表 server_mem_detail ==========
+  // 4. 写入内存详细表
   if (info.has_mem_info()) {
     const auto& mem = info.mem_info();
-    
     MemDetailSample curr;
-    curr.total = mem.total();
-    curr.free = mem.free();
-    curr.avail = mem.avail();
-    curr.buffers = mem.buffers();
-    curr.cached = mem.cached();
-    curr.swap_cached = mem.swap_cached();
-    curr.active = mem.active();
-    curr.inactive = mem.inactive();
-    curr.active_anon = mem.active_anon();
-    curr.inactive_anon = mem.inactive_anon();
-    curr.active_file = mem.active_file();
-    curr.inactive_file = mem.inactive_file();
-    curr.dirty = mem.dirty();
-    curr.writeback = mem.writeback();
-    curr.anon_pages = mem.anon_pages();
-    curr.mapped = mem.mapped();
-    curr.kreclaimable = mem.kreclaimable();
-    curr.sreclaimable = mem.sreclaimable();
+    curr.total = mem.total(); curr.free = mem.free(); curr.avail = mem.avail();
+    curr.buffers = mem.buffers(); curr.cached = mem.cached(); curr.swap_cached = mem.swap_cached();
+    curr.active = mem.active(); curr.inactive = mem.inactive();
+    curr.active_anon = mem.active_anon(); curr.inactive_anon = mem.inactive_anon();
+    curr.active_file = mem.active_file(); curr.inactive_file = mem.inactive_file();
+    curr.dirty = mem.dirty(); curr.writeback = mem.writeback();
+    curr.anon_pages = mem.anon_pages(); curr.mapped = mem.mapped();
+    curr.kreclaimable = mem.kreclaimable(); curr.sreclaimable = mem.sreclaimable();
     curr.sunreclaim = mem.sunreclaim();
 
-    MemDetailSample& last = last_mem_samples[host_name];
+    MemDetailSample& last = last_mem_samples_shards[shard_idx][host_name];
     
     std::ostringstream oss;
     oss << "INSERT INTO server_mem_detail "
@@ -645,11 +675,10 @@ void HostManager::WriteToMysql(
         << rate(curr.sunreclaim, last.sunreclaim)
         << ",'" << time_buf << "')";
     mysql_query(conn, oss.str().c_str());
-    
     last = curr;
   }
 
-  // ========== 5. 写入磁盘详细表 server_disk_detail ==========
+  // 5. 写入磁盘详细表
   for (int i = 0; i < info.disk_info_size(); ++i) {
     const auto& disk = info.disk_info(i);
     std::string disk_name = disk.name();
@@ -663,7 +692,7 @@ void HostManager::WriteToMysql(
     curr.avg_write_latency_ms = disk.avg_write_latency_ms();
     curr.util_percent = disk.util_percent();
 
-    DiskDetailSample& last = last_disk_samples[host_name][disk_name];
+    DiskDetailSample& last = last_disk_samples_shards[shard_idx][host_name][disk_name];
     
     std::ostringstream oss;
     oss << "INSERT INTO server_disk_detail "
@@ -693,21 +722,14 @@ void HostManager::WriteToMysql(
         << rate(curr.util_percent, last.util_percent)
         << ",'" << time_buf << "')";
     mysql_query(conn, oss.str().c_str());
-    
     last = curr;
   }
 
   mysql_close(conn);
 #else
-  (void)host_name; (void)host_score; (void)net_in_rate; (void)net_out_rate;
-  (void)cpu_percent_rate; (void)usr_percent_rate; (void)system_percent_rate;
-  (void)nice_percent_rate; (void)idle_percent_rate; (void)io_wait_percent_rate;
-  (void)irq_percent_rate; (void)soft_irq_percent_rate; (void)steal_percent_rate;
-  (void)guest_percent_rate; (void)guest_nice_percent_rate;
-  (void)load_avg_1_rate; (void)load_avg_3_rate; (void)load_avg_15_rate;
-  (void)mem_used_percent_rate; (void)mem_total_rate; (void)mem_free_rate;
-  (void)mem_avail_rate; (void)net_in_rate_rate; (void)net_out_rate_rate;
-  (void)net_in_drop_rate_rate; (void)net_out_drop_rate_rate;
+  // 防止未使用变量警告
+  (void)host_name; (void)host_score; (void)net_in_rate;
+  // ... 其他变量 ...
 #endif
 }
 
