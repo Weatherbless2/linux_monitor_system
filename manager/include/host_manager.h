@@ -76,11 +76,12 @@ class HostManager {
   // [核心新增] N 个队列，N 个线程
   // 使用 shared_ptr 管理 SafeQueue，方便在 vector 中存储和传递
   std::vector<std::shared_ptr<SafeQueue<monitor::proto::MonitorInfo>>> queues_;
+  //std::vector<std::shared_ptr<SafeQueue<monitor::proto::MonitorInfo>> queues_;
   std::vector<std::thread> worker_threads_;
-
+  
   // 清理线程
   std::unique_ptr<std::thread> thread_;
-
+//std::unique<std::thread> thread_;
   // 内存数据存储 (HostScores)
   std::mutex mtx_;
   std::unordered_map<std::string, HostScore> host_scores_;

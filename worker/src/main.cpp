@@ -37,6 +37,7 @@ int main(int argc, char* argv[]) {
 
   // 创建并启动推送器
   monitor::MonitorPusher pusher(manager_address, interval_seconds);
+  
   pusher.Start();
 
   // 主线程保持运行

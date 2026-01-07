@@ -7,7 +7,8 @@ namespace monitor {
 ::grpc::Status GrpcServerImpl::SetMonitorInfo(
     ::grpc::ServerContext* context,
     const ::monitor::proto::MonitorInfo* request,
-    ::google::protobuf::Empty* response) {
+    ::google::protobuf::Empty* response) 
+{
   if (!request) {
     return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Empty request");
   }
@@ -45,6 +46,7 @@ namespace monitor {
   std::lock_guard<std::mutex> lock(mtx_);
   if (!host_data_.empty()) {
     *response = host_data_.begin()->second.info;
+    
   }
   return grpc::Status::OK;
 }
