@@ -4,7 +4,6 @@
  * @details 使用 mutex 和 condition_variable 实现阻塞式出队
  */
 #pragma once
-
 #include <queue>
 #include <mutex>
 #include <condition_variable>

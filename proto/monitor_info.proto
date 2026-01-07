@@ -103,3 +103,6 @@ service GrpcManager {
   rpc GetMonitorInfo(google.protobuf.Empty) returns (MonitorInfo) {
   }
 }
+
+
+
